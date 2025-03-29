@@ -1,7 +1,3 @@
-#questions : Faut il mélanger les équipes au moment des sous-poules ? car actuellement c'est simplement dans l'ordre du classement 
-# Faut il être égaux parfaitement sur les arbitrages ? 
-# Trouver un système équilibré de répartition des terrains selons les sous-poules actuellement problème de logique il attribue
-#un terrain par principe sans partager les ressources
 import random
 from itertools import combinations
 
@@ -104,6 +100,7 @@ def repartir_matchs_sur_terrains(matchs, toutes_equipes, nb_terrains):
             if disponibles:
                 arbitre = disponibles.pop(0)
                 arbitrages[arbitre.nom] += 1
+                print(f"[Match arbitré par {arbitre.nom}]")
             else:
                 arbitre = None
             match_infos.append({
@@ -165,57 +162,56 @@ def diviser_en_sous_poules(poule, nom):
         return (poule[:moitie], poule[moitie:])
     else:
         return (poule, [])  # ne pas diviser si impair
-    
-def matchs_poules(sous_poules):
+
+# --- Simulation des matchs dans les poules hautes ---
+def simuler_match_poule(poule, nb_terrains):
+    arbitrages = {equipe.nom: 0 for equipe in poule}
     matchs = []
-    # Pour chaque sous-poule, générer tous les matchs possibles
-    for sous_poule in sous_poules:
-        for i in range(len(sous_poule)):
-            for j in range(i + 1, len(sous_poule)):
-                matchs.append((sous_poule[i], sous_poule[j]))
-    return matchs
 
-def melanger_matchs(matchs):
-    # Mélanger les matchs pour ne pas que les équipes jouent à la suite
-    random.shuffle(matchs)
-    return matchs
-
-def attribuer_terrains_par_sous_poule(sous_poules, nb_terrains):
-    total_equipes = sum(len(poule) for poule in sous_poules)
-    total_matchs = sum(len(matchs_poules([poule])) for poule in sous_poules)
+    # Faire jouer toutes les équipes entre elles
+    for i, e1 in enumerate(poule):
+        for e2 in poule[i+1:]:
+            # Simuler le match
+            mode = "officiel"
+            nom1, s1, nom2, s2, m = simuler_match(e1, e2, mode)
+            matchs.append((e1, e2, s1, s2, mode))
     
-    terrains_par_sous_poule = {}
-    series_par_sous_poule = {}
+    # Gérer l'arbitrage
+    equipes_jouant = {equipe.nom for match in matchs for equipe in match[:2]}  # Équipes qui jouent
+    equipes_non_jouant = [equipe for equipe in poule if equipe.nom not in equipes_jouant]
+    equipes_non_jouant.sort(key=lambda e: arbitrages[e.nom])  # Trier les équipes non jouant par nombre d'arbitrages
 
-    # Calculer le nombre de séries et le coefficient d'importance pour chaque sous-poule
-    for index, sous_poule in enumerate(sous_poules):
-        nb_equipes = len(sous_poule)
-        nb_matchs = len(matchs_poules([sous_poule]))  # Nombre de matchs dans la sous-poule
-        coefficient = nb_equipes / total_equipes  # Coefficient basé sur le nombre d'équipes
-        
-        # Calculer le nombre de séries (matchs divisés par le nombre de terrains)
-        series = (nb_matchs + nb_terrains - 1) // nb_terrains  # Arrondi vers le haut
-        series_par_sous_poule[index] = series
-        
-        # Calculer le nombre de terrains à attribuer
-        terrains = round(coefficient * nb_terrains)  # Nombre de terrains basé sur le coefficient
-        terrains_par_sous_poule[index] = terrains
+    for match in matchs:
+        e1, e2, s1, s2, mode = match
+        if arbitrages[e1.nom] == 0 or arbitrages[e2.nom] == 0:
+            if equipes_non_jouant:
+                arbitre = equipes_non_jouant.pop(0)
+                arbitrages[arbitre.nom] += 1
+                print(f"[Match arbitré par {arbitre.nom}]")
 
-    # Rééquilibrer les terrains pour que leur somme soit égale à nb_terrains
-    total_attribue = sum(terrains_par_sous_poule.values())
-    if total_attribue != nb_terrains:
-        diff = nb_terrains - total_attribue
-        for index in terrains_par_sous_poule:
-            if diff > 0:
-                terrains_par_sous_poule[index] += 1
-                diff -= 1
-            elif diff < 0:
-                terrains_par_sous_poule[index] -= 1
-                diff += 1
+    return matchs, arbitrages
 
-    return terrains_par_sous_poule, series_par_sous_poule
+def classer_poule(poule):
+    return sorted(poule, key=lambda x: (-x.points, -x.quotient_points(), -x.difference_points(), random.random()))
 
+def afficher_classement_poule(poule):
+    print("\n📊 Classement de la poule :")
+    poule_classee = classer_poule(poule)
+    for equipe in poule_classee:
+        print(equipe)
 
+def jouer_poules_hautes(poule_haute, nb_terrains):
+    print("\n🏆 Simulation des matchs dans la poule haute:")
+    matchs, arbitrages = simuler_match_poule(poule_haute, nb_terrains)
+    
+    # Afficher les résultats des matchs
+    print("\n🏐 Résultats des matchs:")
+    for match in matchs:
+        e1, e2, s1, s2, mode = match
+        print(f"{e1.nom} {s1} - {s2} {e2.nom} ({mode})")
+
+    # Afficher le classement après les matchs
+    afficher_classement_poule(poule_haute)
 
 # --- EXÉCUTION DU TOURNOI ---
 if __name__ == "__main__":
@@ -226,26 +222,7 @@ if __name__ == "__main__":
     equipes = generer_equipes(nombre_equipes)
     match_infos, arbitrages = generer_matchs_brassage(equipes, nb_terrains)
 
-    print("\nMatchs de brassage (avec terrain et arbitre) :")
-    for info in match_infos:
-        e1, e2, mode = info["match"]
-        nom1, s1, nom2, s2, m = simuler_match(e1, e2, mode)
-        arbitre_txt = f" | Arbitre : {info['arbitre'].nom}" if info["arbitre"] else " | Aucun arbitre"
-        type_txt = "(Comptabilisé)" if mode == "officiel" else f"(Seuls les points de {nom1} comptent)"
-        print(f"[Série {info['serie']}] Terrain {info['terrain']} : {nom1} {s1} - {s2} {nom2} {type_txt}{arbitre_txt}")
-
-    print("\nRésumé arbitrage par équipe :")
-    for nom, count in arbitrages.items():
-        print(f"{nom} : {count} arbitrage(s)")
-
-    manquants = [nom for nom, count in arbitrages.items() if count == 0]
-    if manquants:
-        print("\n⚠️ Attention : les équipes suivantes n'ont jamais arbitré :")
-        for nom in manquants:
-            print(f"❌ {nom}")
-    else:
-        print("\n✅ Toutes les équipes ont arbitré au moins une fois.")
-
+    # Afficher le classement après brassage
     print("\nClassement après brassage :")
     equipes_classees = classer_equipes(equipes)
     for equipe in equipes_classees:
@@ -279,54 +256,6 @@ if __name__ == "__main__":
         for equipe in sous_poule_B1:
             print(f" - {equipe.nom}")
 
-# Phase 5 : Génération des matchs
-
-# Générer les matchs pour chaque sous-poule
-matchs_H1 = matchs_poules([sous_poule_H1])
-matchs_H2 = matchs_poules([sous_poule_H2])
-if sous_poule_B2:
-    matchs_B1 = matchs_poules([sous_poule_B1])
-    matchs_B2 = matchs_poules([sous_poule_B2])
-else:
-    matchs_B1 = matchs_poules([sous_poule_B1])
-
-# Mélanger les matchs pour chaque sous-poule
-matchs_H1 = melanger_matchs(matchs_H1)
-matchs_H2 = melanger_matchs(matchs_H2)
-if sous_poule_B2:
-    matchs_B1 = melanger_matchs(matchs_B1)
-    matchs_B2 = melanger_matchs(matchs_B2)
-else:
-    matchs_B1 = melanger_matchs(matchs_B1)
-
-# Afficher les matchs mélangés pour chaque sous-poule
-print("\n🔷 Matchs sous-poule H1 :")
-for match in matchs_H1:
-    print(f"{match[0].nom} vs {match[1].nom}")
-
-print("\n🔷 Matchs sous-poule H2 :")
-for match in matchs_H2:
-    print(f"{match[0].nom} vs {match[1].nom}")
-
-if sous_poule_B2:
-    print("\n🔶 Matchs sous-poule B1 :")
-    for match in matchs_B1:
-        print(f"{match[0].nom} vs {match[1].nom}")
-
-    print("\n🔶 Matchs sous-poule B2 :")
-    for match in matchs_B2:
-        print(f"{match[0].nom} vs {match[1].nom}")
-else:
-    print("\n🔶 Matchs poule B1 :")
-    for match in matchs_B1:
-        print(f"{match[0].nom} vs {match[1].nom}")
-
-
-sous_poules = [sous_poule_H1, sous_poule_H2, sous_poule_B1, sous_poule_B2]
-    
-terrains_attribues, series_par_sous_poule = attribuer_terrains_par_sous_poule(sous_poules, nb_terrains)
-
-# Affichage des résultats
-print("\n🎯 Attribution des terrains par sous-poule :")
-for i, terrains in terrains_attribues.items():
-    print(f"Sous-poule {i + 1} : {terrains} terrain(s), séries nécessaires : {series_par_sous_poule[i]}")
+    # Phase 5 : Simulation des matchs dans les sous-poules hautes
+    jouer_poules_hautes(sous_poule_H1, nb_terrains)
+    jouer_poules_hautes(sous_poule_H2, nb_terrains)
